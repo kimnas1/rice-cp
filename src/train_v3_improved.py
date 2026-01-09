@@ -615,12 +615,30 @@ if __name__ == "__main__":
                         help='Path to data directory')
     parser.add_argument('--output-dir', type=str, default='outputs/v3_improved',
                         help='Path to output directory')
+    parser.add_argument('--model', type=str, default='convnext_base.fb_in22k_ft_in1k',
+                        help='Model backbone name from timm')
+    parser.add_argument('--img-size', type=int, default=512,
+                        help='Image size for training')
+    parser.add_argument('--epochs', type=int, default=25,
+                        help='Number of training epochs')
+    parser.add_argument('--batch-size', type=int, default=8,
+                        help='Batch size per GPU')
+    parser.add_argument('--lr', type=float, default=1e-4,
+                        help='Learning rate')
+    parser.add_argument('--folds', type=str, default='0',
+                        help='Comma-separated fold numbers to run (e.g., "0,1,2")')
     args = parser.parse_args()
     
-    # Set paths from args
+    # Set config from args
     Config.DATA_DIR = Path(args.data_dir)
     Config.IMAGE_DIR = Config.DATA_DIR / "unido_rice_images"
     Config.OUTPUT_DIR = Path(args.output_dir)
     Config.LOG_DIR = Config.OUTPUT_DIR.parent / "logs"
+    Config.BACKBONE = args.model
+    Config.IMG_SIZE = args.img_size
+    Config.EPOCHS = args.epochs
+    Config.BATCH_SIZE = args.batch_size
+    Config.LEARNING_RATE = args.lr
+    Config.FOLD_TO_RUN = [int(f) for f in args.folds.split(',')]
     
     main()
