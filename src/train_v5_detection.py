@@ -310,8 +310,7 @@ class RiceModelV5(nn.Module):
         self.backbone = timm.create_model(
             backbone_name,
             pretrained=pretrained,
-            features_only=True,
-            out_indices=(0, 1, 2, 3)  # ConvNeXt stages 0-3
+            features_only=True  # Returns all 4 stages by default
         )
         
         # Get feature channels
@@ -329,10 +328,8 @@ class RiceModelV5(nn.Module):
         # Type embedding
         self.type_emb = nn.Embedding(num_types, 64)
         
-        # Continuous target head
+        # Continuous target head (takes pooled features + type embedding)
         self.continuous_head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
             nn.Linear(256 + 64, 256),
             nn.LayerNorm(256),
             nn.GELU(),
