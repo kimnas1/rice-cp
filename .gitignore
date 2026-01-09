@@ -1,0 +1,37 @@
+# Data files
+RiceData/
+*.csv
+
+# Images (too large)
+unido_rice_images/
+*.png
+*.jpg
+*.jpeg
+
+# Output files
+outputs/
+*.pt
+*.pth
+*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+.DS_Store
+*.log
