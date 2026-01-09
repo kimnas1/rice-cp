@@ -49,8 +49,8 @@ class Config:
     OUTPUT_DIR = Path("outputs/v4_counting")
     LOG_DIR = None
     
-    # Model - ConvNeXt works with any image size (Swin requires fixed 224px)
-    BACKBONE = "convnext_large.fb_in22k_ft_in1k"  # ConvNeXt-Large for best counting
+    # Model - Swin Transformer for better counting
+    BACKBONE = "swin_base_patch4_window7_224"
     PRETRAINED = True
     
     # Training - Higher resolution for counting
@@ -87,6 +87,9 @@ class Config:
     # Device
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     USE_AMP = True
+    
+    # Log transform for counts (can be disabled via --no-log)
+    USE_LOG_TRANSFORM = True
     
     SEED = 42
 
@@ -640,12 +643,15 @@ def main():
         valid_fold = train_df[train_df['fold'] == fold].reset_index(drop=True)
         print(f"Train: {len(train_fold)}, Valid: {len(valid_fold)}")
         
-        # Fit normalizer with log transform for counts
-        normalizer = TargetNormalizer(count_indices, use_log_for_counts=True)
+        # Fit normalizer - optionally use log transform for counts
+        normalizer = TargetNormalizer(count_indices, use_log_for_counts=Config.USE_LOG_TRANSFORM)
         train_targets = train_fold[Config.TARGET_COLS].values.astype(np.float32)
         normalizer.fit(train_targets)
         
-        print("\n📊 Using log-transform for count targets")
+        if Config.USE_LOG_TRANSFORM:
+            print("\n📊 Using log-transform for count targets")
+        else:
+            print("\n📊 Using standard z-score normalization (no log)")
         
         # Create datasets
         train_dataset = RiceDataset(
@@ -794,13 +800,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='V4 Rice Counting Training')
     parser.add_argument('--data-dir', type=str, default='RiceData/Unido_AfricaRice_Challenge')
     parser.add_argument('--output-dir', type=str, default='outputs/v4_counting')
-    parser.add_argument('--model', type=str, default='convnext_large.fb_in22k_ft_in1k',
-                        help='Model backbone (use convnext_* for variable sizes, swin_* requires 224px)')
+    parser.add_argument('--model', type=str, default='swin_base_patch4_window7_224')
     parser.add_argument('--img-size', type=int, default=384)
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--batch-size', type=int, default=4)
     parser.add_argument('--lr', type=float, default=5e-5)
     parser.add_argument('--folds', type=str, default='0')
+    parser.add_argument('--no-log', action='store_true', help='Disable log transform for counts')
     args = parser.parse_args()
     
     Config.DATA_DIR = Path(args.data_dir)
@@ -813,5 +819,6 @@ if __name__ == "__main__":
     Config.BATCH_SIZE = args.batch_size
     Config.LEARNING_RATE = args.lr
     Config.FOLD_TO_RUN = [int(f) for f in args.folds.split(',')]
+    Config.USE_LOG_TRANSFORM = not args.no_log
     
     main()
