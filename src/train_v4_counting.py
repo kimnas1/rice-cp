@@ -49,8 +49,8 @@ class Config:
     OUTPUT_DIR = Path("outputs/v4_counting")
     LOG_DIR = None
     
-    # Model - Swin Transformer for better counting
-    BACKBONE = "swin_base_patch4_window7_224"
+    # Model - ConvNeXt works with any image size (Swin requires fixed 224px)
+    BACKBONE = "convnext_large.fb_in22k_ft_in1k"  # ConvNeXt-Large for best counting
     PRETRAINED = True
     
     # Training - Higher resolution for counting
@@ -794,7 +794,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='V4 Rice Counting Training')
     parser.add_argument('--data-dir', type=str, default='RiceData/Unido_AfricaRice_Challenge')
     parser.add_argument('--output-dir', type=str, default='outputs/v4_counting')
-    parser.add_argument('--model', type=str, default='swin_base_patch4_window7_224')
+    parser.add_argument('--model', type=str, default='convnext_large.fb_in22k_ft_in1k',
+                        help='Model backbone (use convnext_* for variable sizes, swin_* requires 224px)')
     parser.add_argument('--img-size', type=int, default=384)
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--batch-size', type=int, default=4)
