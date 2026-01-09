@@ -311,7 +311,7 @@ class RiceModelV5(nn.Module):
             backbone_name,
             pretrained=pretrained,
             features_only=True,
-            out_indices=(1, 2, 3, 4)  # Get C2, C3, C4, C5
+            out_indices=(0, 1, 2, 3)  # ConvNeXt stages 0-3
         )
         
         # Get feature channels
