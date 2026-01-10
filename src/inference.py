@@ -233,7 +233,7 @@ def predict_with_tta(model, df, img_dir, normalizer, config):
             with autocast(enabled=config.USE_AMP):
                 pred, _ = model(aug_img, type_tensor)
             
-            tta_preds.append(pred.cpu().numpy())
+            tta_preds.append(pred.detach().cpu().numpy())
         
         # Average TTA predictions
         avg_pred = np.mean(tta_preds, axis=0)
