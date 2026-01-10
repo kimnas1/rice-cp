@@ -315,7 +315,7 @@ def main():
             print(f"Warning: {ckpt_path} not found, skipping")
             continue
         
-        ckpt = torch.load(ckpt_path, map_location=Config.DEVICE)
+        ckpt = torch.load(ckpt_path, map_location=Config.DEVICE, weights_only=False)
         
         # Load normalizer
         normalizer = ZScoreNormalizer()
