@@ -52,11 +52,14 @@ class Config:
     SAM_CHECKPOINT = "sam_vit_h_4b8939.pth"
     SAM_MODEL_TYPE = "vit_h"
     
-    # Grain filtering
-    MIN_GRAIN_AREA = 50      # Minimum area for a grain mask (pixels)
-    MAX_GRAIN_AREA = 15000   # Maximum area for a grain mask
-    MIN_ASPECT_RATIO = 1.5   # Minimum length/width ratio
-    MAX_ASPECT_RATIO = 8.0   # Maximum length/width ratio
+    # Grain filtering - from paper: length 4-15mm, width 1-4mm
+    # Assuming ~10 pixels/mm at 512px for typical rice images
+    MIN_GRAIN_AREA = 40       # ~4mm x 1mm = 4mm² ≈ 40 pixels
+    MAX_GRAIN_AREA = 6000     # ~15mm x 4mm = 60mm² ≈ 600 pixels (with margin)
+    MIN_ASPECT_RATIO = 2.0    # Rice is elongated (length/width ~2.5-4)
+    MAX_ASPECT_RATIO = 6.0    # Very long grains
+    MIN_GRAIN_LENGTH = 30     # Minimum major axis (pixels)
+    MAX_GRAIN_LENGTH = 200    # Maximum major axis (pixels)
     
     # GroundingDINO settings
     GDINO_CHECKPOINT = "groundingdino_swint_ogc.pth"
@@ -94,7 +97,11 @@ class SAMGrainCounter:
     
     def count_grains(self, image: np.ndarray, config: Config) -> Tuple[int, List[Dict]]:
         """
-        Count rice grains in an image
+        Count rice grains in an image using paper's approach:
+        1. SAM segmentation
+        2. Ellipse fitting (paper: better than bbox for rotated grains)
+        3. Sub-contour removal (paper: prevents over-counting)
+        4. Size filtering
         
         Returns:
             total_count: Number of detected grains
@@ -103,7 +110,7 @@ class SAMGrainCounter:
         # Generate all masks
         masks = self.mask_generator.generate(image)
         
-        # Filter masks by grain-like properties
+        # Filter masks by grain-like properties using ellipse fitting
         grain_masks = []
         for mask in masks:
             area = mask['area']
@@ -112,27 +119,91 @@ class SAMGrainCounter:
             if area < config.MIN_GRAIN_AREA or area > config.MAX_GRAIN_AREA:
                 continue
             
-            # Get mask bbox to compute aspect ratio
-            bbox = mask['bbox']  # x, y, w, h
-            if bbox[2] == 0 or bbox[3] == 0:
+            # Get contour points from mask for ellipse fitting
+            seg_mask = mask['segmentation'].astype(np.uint8) * 255
+            contours, _ = cv2.findContours(seg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if not contours or len(contours[0]) < 5:
                 continue
             
-            aspect_ratio = max(bbox[2], bbox[3]) / min(bbox[2], bbox[3])
-            
-            # Filter by aspect ratio (grains are elongated)
-            if aspect_ratio < config.MIN_ASPECT_RATIO or aspect_ratio > config.MAX_ASPECT_RATIO:
-                continue
+            # Fit ellipse (from paper: major axis = length, minor axis = width)
+            try:
+                ellipse = cv2.fitEllipse(contours[0])
+                (cx, cy), (minor_axis, major_axis), angle = ellipse
+                
+                # Ensure major > minor
+                if minor_axis > major_axis:
+                    major_axis, minor_axis = minor_axis, major_axis
+                
+                # Calculate aspect ratio from ellipse (more accurate than bbox)
+                if minor_axis == 0:
+                    continue
+                aspect_ratio = major_axis / minor_axis
+                
+                # Filter by aspect ratio (grains are elongated)
+                if aspect_ratio < config.MIN_ASPECT_RATIO or aspect_ratio > config.MAX_ASPECT_RATIO:
+                    continue
+                
+                # Filter by length (from paper: 4-15mm)
+                if hasattr(config, 'MIN_GRAIN_LENGTH'):
+                    if major_axis < config.MIN_GRAIN_LENGTH or major_axis > config.MAX_GRAIN_LENGTH:
+                        continue
+                
+            except cv2.error:
+                # Fallback to bbox if ellipse fitting fails
+                bbox = mask['bbox']
+                if bbox[2] == 0 or bbox[3] == 0:
+                    continue
+                aspect_ratio = max(bbox[2], bbox[3]) / min(bbox[2], bbox[3])
+                major_axis = max(bbox[2], bbox[3])
+                minor_axis = min(bbox[2], bbox[3])
+                
+                if aspect_ratio < config.MIN_ASPECT_RATIO or aspect_ratio > config.MAX_ASPECT_RATIO:
+                    continue
             
             grain_masks.append({
                 'area': area,
-                'bbox': bbox,
+                'bbox': mask['bbox'],
                 'aspect_ratio': aspect_ratio,
+                'major_axis': major_axis,
+                'minor_axis': minor_axis,
                 'segmentation': mask['segmentation'],
                 'predicted_iou': mask['predicted_iou'],
                 'stability_score': mask['stability_score']
             })
         
+        # Sub-contour removal (from paper: check if one contour is enclosed in another)
+        grain_masks = self._remove_sub_contours(grain_masks)
+        
         return len(grain_masks), grain_masks
+    
+    def _remove_sub_contours(self, masks: List[Dict]) -> List[Dict]:
+        """
+        Remove sub-contours that are enclosed within larger contours.
+        From paper: prevents over-counting when one grain produces multiple sub-contours.
+        """
+        if len(masks) <= 1:
+            return masks
+        
+        to_remove = set()
+        
+        for i, mask_i in enumerate(masks):
+            x1, y1, w1, h1 = mask_i['bbox']
+            
+            for j, mask_j in enumerate(masks):
+                if i == j:
+                    continue
+                
+                x2, y2, w2, h2 = mask_j['bbox']
+                
+                # Check if mask_i is enclosed within mask_j
+                if (x2 <= x1 and y2 <= y1 and 
+                    x2 + w2 >= x1 + w1 and y2 + h2 >= y1 + h1):
+                    # mask_i is inside mask_j, keep the larger one
+                    if mask_i['area'] < mask_j['area']:
+                        to_remove.add(i)
+        
+        return [m for i, m in enumerate(masks) if i not in to_remove]
     
     def visualize(self, image: np.ndarray, grain_masks: List[Dict], 
                   output_path: str = None) -> np.ndarray:
